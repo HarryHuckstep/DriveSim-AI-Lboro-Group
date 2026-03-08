@@ -23,5 +23,5 @@ def add_longitudinal_forces(df: pd.DataFrame, params: VehicleParams, *,
     df["F_roll_N"] = params.crr * params.mass_kg * params.g * np.cos(grade_rad)
     df["F_slope_N"] = params.mass_kg * params.g * np.sin(grade_rad)
     df["F_inertia_N"] = params.mass_kg * a
-    df["F_trac_N"] = df["F_aero_N"] + df["F_roll_N"] + df["F_slope_N"] + df["F_inertia_N"]
+    df["F_trac_N"] = + df["F_inertia_N"] + df["F_aero_N"] + df["F_roll_N"] + df["F_slope_N"] 
     return df
