@@ -1,14 +1,19 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
-import requests
-import time
 import json
 import threading
-import config
+import time
+import requests
 
-# Disables SSL warnings for Python 2.7.
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
+
+try:
+    from . import config
+except ImportError:
+   import config
+
 requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
+
 
 class GraniteClient(object):
     def __init__(self):
@@ -17,7 +22,6 @@ class GraniteClient(object):
         self._token_lock = threading.Lock()
 
     def _get_iam_token(self):
-        # Retrieves or refreshes the IAM token.
         with self._token_lock:
             if self._cached_token and time.time() < (self._token_expiry - 60):
                 return self._cached_token
@@ -25,60 +29,99 @@ class GraniteClient(object):
         try:
             headers = {"Content-Type": "application/x-www-form-urlencoded"}
             data = "grant_type=urn:ibm:params:oauth:grant-type:apikey&apikey=" + config.IBM_API_KEY
-            
-            response = requests.post(config.IBM_AUTH_URL, headers=headers, data=data, verify=False)
-            
-            if response.status_code == 200:
-                json_resp = response.json()
-                with self._token_lock:
-                    self._cached_token = json_resp["access_token"]
-                    self._token_expiry = time.time() + json_resp["expires_in"]
-                return self._cached_token
-        except Exception as e:
-            print "Token Error:", e
-        return None
 
-    def _worker_logic(self, metrics):
-        # This is the actual logic that runs inside the thread.
-        token = self._get_iam_token()
-        if not token: return
-
-        try:
-            prompt_text = (
-                "You are a professional Race Engineer. "
-                "Analyze this telemetry JSON: " + json.dumps(metrics) + ". "
-                "Current state: Speed (speedX) is in km/h. TrackPos is -1 to 1 (0 is center). "
-                "Give 1 sentence of status starting with the Track Position value, then Speed. Then give 1 driving instruction."
+            response = requests.post(
+                config.IBM_AUTH_URL,
+                headers=headers,
+                data=data,
+                verify=False,
+                timeout=15,
             )
 
-            payload = {
-                "project_id": config.IBM_PROJECT_ID,
-                "model_id": config.IBM_MODEL_ID,
-                "input": prompt_text,
-                "parameters": {
-                    "decoding_method": "greedy",
-                    "max_new_tokens": 150,
-                    "min_new_tokens": 1
-                }
-            }
-            headers = {
-                "Content-Type": "application/json",
-                "Authorization": "Bearer " + token
-            }
-
-            response = requests.post(config.IBM_GRANITE_URL, headers=headers, json=payload, timeout=2.0, verify=False)
-
             if response.status_code == 200:
-                print "\n>> AI Race Engineer:", response.json()['results'][0]['generated_text'].strip()
-                print "--------------------------------------------------"
-            else:
-                print "Granite API Error:", response.status_code
+                token_data = response.json()
+                with self._token_lock:
+                    self._cached_token = token_data["access_token"]
+                    self._token_expiry = time.time() + token_data["expires_in"]
+                    return self._cached_token
 
-        except Exception:
-            pass # Fails silently to keep car driving, prevents crashes.
+            print("Token request failed:", response.status_code)
+            print("Body:", response.text)
+            return None
 
-    def send_async_analysis(self, metrics):
-        # Starts the analysis in a background thread.
-        t = threading.Thread(target=self._worker_logic, args=(metrics,))
-        t.daemon = True
-        t.start()
+        except Exception as e:
+            print("Token Error:", e)
+            return None
+
+    def _post_granite(self, prompt_text, timeout_s=35.0, max_new_tokens=420):
+        token = self._get_iam_token()
+        if not token:
+            print("No IAM token obtained.")
+            return None
+
+        payload = {
+            "project_id": config.IBM_PROJECT_ID,
+            "model_id": config.IBM_MODEL_ID,
+            "input": prompt_text,
+            "parameters": {
+                "decoding_method": "greedy",
+                "max_new_tokens": max_new_tokens,
+                "min_new_tokens": 1,
+            },
+        }
+
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + token,
+        }
+
+        try:
+            response = requests.post(
+                config.IBM_GRANITE_URL,
+                headers=headers,
+                json=payload,
+                timeout=timeout_s,
+                verify=False,
+            )
+
+            if response.status_code != 200:
+                print("Granite API Error:", response.status_code)
+                try:
+                    print(response.json())
+                except Exception:
+                    print(response.text)
+                return None
+
+            data = response.json()
+            results = data.get("results", [])
+            if results and "generated_text" in results[0]:
+                return results[0]["generated_text"].strip()
+
+            print("Unexpected Granite response:", data)
+            return None
+
+        except Exception as e:
+            print("Granite Request Error:", e)
+            return None
+
+    def answer_graph_question(self, graph_context):
+        prompt_text = (
+            "You are an automotive data analysis assistant for engineers.\n"
+            "Your job is to analyse vehicle telemetry graphs using only the provided graph context.\n"
+            "Write in a technical, engineering-style tone.\n"
+            "Be specific about trends, ranges, operating behaviour, relationships, anomalies, and likely interpretations.\n"
+            "If the graph is an XY graph, discuss correlation, whether the relationship appears linear or non-linear, and what the slope/direction suggests.\n"
+            "If the graph is a time-series graph, discuss overall trend, stability, transient events, spikes, and possible operating phases.\n"
+            "Do not invent values or causes not supported by the graph context.\n"
+            "If the answer cannot be inferred from the context, say exactly: "
+            "'I cannot determine that from the provided graph context.'\n\n"
+            "When useful, structure your answer around:\n"
+            "1. Main observation\n"
+            "2. Supporting evidence from the graph summary\n"
+            "3. Engineering interpretation\n"
+            "4. Any uncertainty or limitation\n\n"
+            "Graph context JSON:\n"
+            + json.dumps(graph_context)
+        )
+
+        return self._post_granite(prompt_text)
