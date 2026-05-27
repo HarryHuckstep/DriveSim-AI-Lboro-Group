@@ -782,6 +782,7 @@ app.layout = html.Div(
         dcc.Store(id="processed-data-store"),
         dcc.Store(id="graph-payloads-store", data=graph_payloads),
         dcc.Store(id="driver-analysis-store", data=driver_analysis),
+        dcc.Store(id="granite-answer-store"),
         dcc.Interval(id="playback-interval", interval=250, n_intervals=0),
 
         html.Div(
@@ -1022,7 +1023,6 @@ app.layout = html.Div(
 #=======================================================================
 
 # Ryan's code to build the Granite graph analysis section of the dashboard, including the graph selector, question input, and response display.
-
         html.Div(
             [
                 html.H2("IBM Granite graph analysis", style={"marginTop": "0", "marginBottom": "14px"}),
@@ -1031,7 +1031,14 @@ app.layout = html.Div(
                     [
                         html.Div(
                             [
-                                html.Div("Graph", style={"fontSize": "12px", "color": colors["muted"], "marginBottom": "6px"}),
+                                html.Div(
+                                    "Graph",
+                                    style={
+                                        "fontSize": "12px",
+                                        "color": colors["muted"],
+                                        "marginBottom": "6px",
+                                    },
+                                ),
                                 dcc.Dropdown(
                                     id="graph-selector",
                                     options=[
@@ -1049,7 +1056,14 @@ app.layout = html.Div(
 
                         html.Div(
                             [
-                                html.Div("Focus x-value (optional)", style={"fontSize": "12px", "color": colors["muted"], "marginBottom": "6px"}),
+                                html.Div(
+                                    "Focus x-value (optional)",
+                                    style={
+                                        "fontSize": "12px",
+                                        "color": colors["muted"],
+                                        "marginBottom": "6px",
+                                    },
+                                ),
                                 dcc.Input(
                                     id="focus-x",
                                     type="number",
@@ -1064,23 +1078,27 @@ app.layout = html.Div(
                             ]
                         ),
                     ],
-                    style={"display": "flex", "gap": "12px", "marginBottom": "12px"},
+                    style={
+                        "display": "flex",
+                        "gap": "12px",
+                        "marginBottom": "12px",
+                    },
                 ),
 
                 dcc.Textarea(
-    id="granite-question",
-    placeholder="Ask a question about the selected graph...",
-    style={
-        "width": "100%",
-        "height": "110px",
-        "padding": "12px",
-        "borderRadius": "12px",
-        "border": f"1px solid {colors['border']}",
-        "marginBottom": "12px",
-        "color": "#000000",              
-        "backgroundColor": "#ffffff",    
-    },
-),
+                    id="granite-question",
+                    placeholder="Ask a question about the selected graph...",
+                    style={
+                        "width": "100%",
+                        "height": "110px",
+                        "padding": "12px",
+                        "borderRadius": "12px",
+                        "border": f"1px solid {colors['border']}",
+                        "marginBottom": "12px",
+                        "color": "#000000",
+                        "backgroundColor": "#ffffff",
+                    },
+                ),
 
                 html.Button(
                     "Analyse with Granite",
@@ -1107,6 +1125,52 @@ app.layout = html.Div(
                         "borderRadius": "12px",
                         "border": f"1px solid {colors['border']}",
                         "backgroundColor": "#0d1117",
+                    },
+                ),
+
+                html.Div(
+                    [
+                        html.Button(
+                            "Read answer aloud",
+                            id="tts-read-button",
+                            n_clicks=0,
+                            style={
+                                "backgroundColor": colors["success"],
+                                "color": "#0d1117",
+                                "border": "none",
+                                "borderRadius": "12px",
+                                "padding": "12px 18px",
+                                "fontWeight": "700",
+                                "cursor": "pointer",
+                                "marginTop": "12px",
+                                "marginRight": "8px",
+                            },
+                        ),
+
+                        html.Button(
+                            "Stop reading",
+                            id="tts-stop-button",
+                            n_clicks=0,
+                            style={
+                                "backgroundColor": colors["danger"],
+                                "color": "#ffffff",
+                                "border": "none",
+                                "borderRadius": "12px",
+                                "padding": "12px 18px",
+                                "fontWeight": "700",
+                                "cursor": "pointer",
+                                "marginTop": "12px",
+                            },
+                        ),
+                    ]
+                ),
+
+                html.Div(
+                    id="tts-status",
+                    style={
+                        "marginTop": "8px",
+                        "color": colors["muted"],
+                        "fontSize": "13px",
                     },
                 ),
             ],
@@ -1461,6 +1525,7 @@ def refresh_dashboard(index):
 
 @app.callback(
     Output("granite-response", "children"),
+    Output("granite-answer-store", "data"),
     Input("granite-button", "n_clicks"),
     State("graph-selector", "value"),
     State("granite-question", "value"),
@@ -1480,7 +1545,8 @@ def analyse_with_granite(_, graph_id, question, focus_x, payloads):
             break
 
     if selected_payload is None:
-        return "Selected graph payload was not found."
+        message = "Selected graph payload was not found."
+        return message, message
 
     graph_context = build_graph_context(
         graph_payload=selected_payload,
@@ -1492,9 +1558,10 @@ def analyse_with_granite(_, graph_id, question, focus_x, payloads):
     answer = client.answer_graph_question(graph_context)
 
     if answer:
-        return answer
+        return answer, answer
 
-    return "No response received from Granite."
+    message = "No response received from Granite."
+    return message, message
 
 #=======================================================================
 
@@ -1555,6 +1622,48 @@ def update_driver_classifier_display(driver_analysis):
     )
 
 #=======================================================================
+app.clientside_callback(
+    """
+    function(readClicks, stopClicks, answerText) {
+        const triggered = dash_clientside.callback_context.triggered;
+
+        if (!triggered || triggered.length === 0) {
+            return "";
+        }
+
+        const triggerId = triggered[0].prop_id;
+
+        if (triggerId === "tts-stop-button.n_clicks") {
+            window.speechSynthesis.cancel();
+            return "Stopped reading.";
+        }
+
+        if (triggerId === "tts-read-button.n_clicks") {
+            if (!answerText) {
+                return "No Granite answer available to read.";
+            }
+
+            window.speechSynthesis.cancel();
+
+            const utterance = new SpeechSynthesisUtterance(answerText);
+            utterance.rate = 1.0;
+            utterance.pitch = 1.0;
+            utterance.volume = 1.0;
+
+            window.speechSynthesis.speak(utterance);
+
+            return "Reading Granite answer aloud.";
+        }
+
+        return "";
+    }
+    """,
+    Output("tts-status", "children"),
+    Input("tts-read-button", "n_clicks"),
+    Input("tts-stop-button", "n_clicks"),
+    State("granite-answer-store", "data"),
+    prevent_initial_call=True,
+)
 
 if __name__ == "__main__":
     app.run(debug=True)
