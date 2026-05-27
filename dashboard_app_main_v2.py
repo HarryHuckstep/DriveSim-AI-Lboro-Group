@@ -19,6 +19,7 @@ from src.dashboard_pipeline import prepare_dashboard_df
 from src.physics.longitudinal import VehicleParams
 from src.physics.power_energy import plot_power, plot_cumulative_energy
 from src.physics.longitudinal import plot_longitudinal_forces
+from src.features.efficiency import plot_rolling_energy_efficiency
 
 #======================================================================
 
@@ -1049,6 +1050,7 @@ app.layout = html.Div(
                 html.Div([dcc.Graph(id="power-plot")], style=card_style()),
                 html.Div([dcc.Graph(id="force-plot")], style=card_style()),
                 html.Div([dcc.Graph(id="energy-plot")], style=card_style()),
+                html.Div([dcc.Graph(id="rolling_efficiency-plot")], style=card_style()),
 
                 #=======================================================================
             ],
@@ -1386,13 +1388,20 @@ def update_graph_selector(payloads):
     Output("power-plot", "figure"),
     Input("processed-data-store", "data"),
 )
+# def update_power_plot(stored_data):
+#     if stored_data is None:
+#         raise PreventUpdate
+
+#     uploaded_df = pd.DataFrame(stored_data)
+#     return plot_power(uploaded_df)
+
 def update_power_plot(stored_data):
     if stored_data is None:
         raise PreventUpdate
 
     uploaded_df = pd.DataFrame(stored_data)
-    return plot_power(uploaded_df)
-
+    fig = plot_power(uploaded_df)
+    return apply_common_layout(fig, "Power vs Time")
 #========================================================================
 
 # Julian's lines corresponding to plotting longitudinal forces.
@@ -1405,7 +1414,8 @@ def update_force_plot(stored_data):
         raise PreventUpdate
 
     uploaded_df = pd.DataFrame(stored_data)
-    return plot_longitudinal_forces(uploaded_df)
+    fig = plot_longitudinal_forces(uploaded_df)
+    return apply_common_layout(fig, "Force vs Time")
 
 #=========================================================================
 
@@ -1420,7 +1430,26 @@ def update_energy_plot(stored_data):
         raise PreventUpdate
 
     uploaded_df = pd.DataFrame(stored_data)
-    return plot_cumulative_energy(uploaded_df)
+    fig = plot_cumulative_energy(uploaded_df)
+    
+    return apply_common_layout(fig, "Cumulative Energy vs Time")
+
+#==========================================================================
+
+@app.callback(
+    Output("rolling_efficiency-plot", "figure"),
+    Input("processed-data-store", "data"),
+)    
+def update_rolling_efficiency_plot(stored_data):
+    if stored_data is None:
+        raise PreventUpdate
+
+    uploaded_df = pd.DataFrame(stored_data)
+    fig = plot_rolling_energy_efficiency(uploaded_df)
+    return apply_common_layout(fig, "Energy Efficiency vs Time")
+
+
+#=======================================================================
 
 
 

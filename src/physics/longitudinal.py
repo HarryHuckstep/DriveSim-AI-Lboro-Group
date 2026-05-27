@@ -115,16 +115,21 @@ def plot_longitudinal_forces(
             )
             
             
-    fig.update_layout(
-        title="Longitudinal Forces vs Time",
-        xaxis_title=x_label,
-        yaxis_title="Force (N)",
-        hovermode="x unified",
-        template="plotly_white",
-        height=500,
-        width=1000,
-    )
+    # fig.update_layout(
+    #     title="Longitudinal Forces vs Time",
+    #     xaxis_title=x_label,
+    #     yaxis_title="Force (N)",
+    #     hovermode="x unified",
+    #     template="plotly_white",
+    #     height=500,
+    #     width=1000,
+    # )
 
+    fig.update_layout(
+    xaxis_title=x_label,
+    yaxis_title="Force (N)",
+    height=500,)
+    
     return fig
 
 

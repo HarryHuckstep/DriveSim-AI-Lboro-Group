@@ -143,15 +143,19 @@ def plot_power(
                 )
             )
 
+    # fig.update_layout(
+    #     title="Power vs Time",
+    #     xaxis_title=x_label,
+    #     yaxis_title="Power (W)",
+    #     hovermode="x unified",
+    #     template="plotly_white",
+    #     height=500,
+    #     width=1000,
+    # )
     fig.update_layout(
-        title="Power vs Time",
-        xaxis_title=x_label,
-        yaxis_title="Power (W)",
-        hovermode="x unified",
-        template="plotly_white",
-        height=500,
-        width=1000,
-    )
+    xaxis_title=x_label,
+    yaxis_title="Power (W)",
+    height=500,)
 
     return fig
 
@@ -231,15 +235,19 @@ def plot_cumulative_energy(
                 )
             )
 
+    # fig.update_layout(
+    #     title="Cumulative Energy vs Time",
+    #     xaxis_title=x_label,
+    #     yaxis_title="Cumulative Energy (J)",
+    #     hovermode="x unified",
+    #     template="plotly_white",
+    #     height=500,
+    #     width=1000,
+    # )
     fig.update_layout(
-        title="Cumulative Energy vs Time",
-        xaxis_title=x_label,
-        yaxis_title="Cumulative Energy (J)",
-        hovermode="x unified",
-        template="plotly_white",
-        height=500,
-        width=1000,
-    )
+    xaxis_title=x_label,
+    yaxis_title="Cumulative Energy (J)",
+    height=500,)
 
     return fig
 
