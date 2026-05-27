@@ -463,7 +463,16 @@ def apply_common_layout(fig, title):
         plot_bgcolor=colors["card"],
         font={"color": colors["text"]},
         margin=dict(l=50, r=40, t=60, b=40),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+        legend=dict(
+            orientation="h",
+            x=0.94,
+            xanchor="right",
+            y=1.07,
+            yanchor="top",
+            bgcolor=colors["card"],
+            bordercolor=colors["border"],
+            borderwidth=1,
+        ),
         hovermode="x unified",
         xaxis=dict(gridcolor="#21262d", zeroline=False),
         yaxis=dict(gridcolor="#21262d", zeroline=False),
@@ -1952,7 +1961,7 @@ app.clientside_callback(
             const utterance = new SpeechSynthesisUtterance(answerText);
             utterance.rate = 1.0;
             utterance.pitch = 1.0;
-            utterance.volume = 1.0;
+            utterance.volume = 5.0;
 
             window.speechSynthesis.speak(utterance);
 
