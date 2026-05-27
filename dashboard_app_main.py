@@ -15,7 +15,7 @@ from plotly.subplots import make_subplots
 
 import base64
 import io
-from src.io.dashboard_pipeline import prepare_dashboard_df
+from src.dashboard_pipeline import prepare_dashboard_df
 from src.physics.longitudinal import VehicleParams
 from src.physics.power_energy import plot_power, plot_cumulative_energy
 from src.physics.longitudinal import plot_longitudinal_forces
