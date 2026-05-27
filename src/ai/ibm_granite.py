@@ -10,7 +10,7 @@ from requests.packages.urllib3.exceptions import InsecureRequestWarning
 try:
     from . import config
 except ImportError:
-   import config
+    import config
 
 requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
@@ -28,7 +28,10 @@ class GraniteClient(object):
 
         try:
             headers = {"Content-Type": "application/x-www-form-urlencoded"}
-            data = "grant_type=urn:ibm:params:oauth:grant-type:apikey&apikey=" + config.IBM_API_KEY
+            data = (
+                "grant_type=urn:ibm:params:oauth:grant-type:apikey&apikey="
+                + config.IBM_API_KEY
+            )
 
             response = requests.post(
                 config.IBM_AUTH_URL,
@@ -94,6 +97,7 @@ class GraniteClient(object):
 
             data = response.json()
             results = data.get("results", [])
+
             if results and "generated_text" in results[0]:
                 return results[0]["generated_text"].strip()
 
@@ -109,19 +113,34 @@ class GraniteClient(object):
             "You are an automotive data analysis assistant for engineers.\n"
             "Your job is to analyse vehicle telemetry graphs using only the provided graph context.\n"
             "Write in a technical, engineering-style tone.\n"
-            "Be specific about trends, ranges, operating behaviour, relationships, anomalies, and likely interpretations.\n"
-            "If the graph is an XY graph, discuss correlation, whether the relationship appears linear or non-linear, and what the slope/direction suggests.\n"
-            "If the graph is a time-series graph, discuss overall trend, stability, transient events, spikes, and possible operating phases.\n"
+            "Be specific about trends, ranges, operating behaviour, relationships, anomalies, and likely interpretations.\n\n"
+
+            "You must also use the previous driving data in the graph context to predict likely future performance "
+            "if similar driving behaviour or operating conditions continue.\n"
+            "Your prediction should be based on observed trends, spikes, ranges, correlations, slopes, and operating phases.\n"
+            "Suggest practical improvements for future drives where the data supports them, such as smoother throttle use, "
+            "improved gear selection, reduced engine load, more stable speed control, or better thermal management.\n"
+            "Do not invent exact future values unless they can be reasonably inferred from the graph context.\n"
+            "If a future prediction or improvement cannot be supported by the data, say this clearly.\n\n"
+
+            "If the graph is an XY graph, discuss correlation, whether the relationship appears linear or non-linear, "
+            "and what the slope/direction suggests for future behaviour.\n"
+            "If the graph is a time-series graph, discuss overall trend, stability, transient events, spikes, "
+            "possible operating phases, and what may happen next if the same trend continues.\n\n"
+
             "Do not invent values or causes not supported by the graph context.\n"
             "If the answer cannot be inferred from the context, say exactly: "
             "'I cannot determine that from the provided graph context.'\n\n"
-            "When useful, structure your answer around:\n"
-            "1. Main observation\n"
-            "2. Supporting evidence from the graph summary\n"
-            "3. Engineering interpretation\n"
-            "4. Any uncertainty or limitation\n\n"
+
+            "Structure your answer around:\n"
+            "1. Current performance observation\n"
+            "2. Evidence from the graph summary\n"
+            "3. Predicted future behaviour\n"
+            "4. Suggested improvement for future drives\n"
+            "5. Uncertainty or limitation\n\n"
+
             "Graph context JSON:\n"
             + json.dumps(graph_context)
         )
 
-        return self._post_granite(prompt_text)
+        return self._post_granite(prompt_text, max_new_tokens=650)
