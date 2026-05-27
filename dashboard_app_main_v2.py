@@ -19,7 +19,6 @@ from src.dashboard_pipeline import prepare_dashboard_df
 from src.physics.longitudinal import VehicleParams
 from src.physics.power_energy import plot_power, plot_cumulative_energy
 from src.physics.longitudinal import plot_longitudinal_forces
-from src.features.efficiency import plot_rolling_energy_efficiency
 
 #======================================================================
 
@@ -403,11 +402,6 @@ def make_speedometer(speed_value):
                     {"range": [50, 100], "color": "#1f2937"},
                     {"range": [100, 140], "color": "#312e1f"},
                 ],
-                "threshold": {
-                    "line": {"color": colors["danger"], "width": 4},
-                    "thickness": 0.8,
-                    "value": 120,
-                },
             },
         )
     )
@@ -438,11 +432,6 @@ def make_rpm_gauge(rpm_value):
                     {"range": [3000, 5000], "color": "#1f2937"},
                     {"range": [5000, 7000], "color": "#33211f"},
                 ],
-                "threshold": {
-                    "line": {"color": colors["danger"], "width": 4},
-                    "thickness": 0.8,
-                    "value": 6000,
-                },
             },
         )
     )
@@ -916,6 +905,48 @@ app.layout = html.Div(
             style={"marginBottom": "14px", "color": colors["muted"]},
         ),
 
+        html.Div(
+            [
+                html.Div(
+                    "Show graph sections",
+                    style={"fontSize": "13px", "color": colors["muted"], "marginBottom": "8px"},
+                ),
+                dcc.Checklist(
+                    id="graph-section-selector",
+                    options=[
+                        {"label": "Basic graphs", "value": "basic"},
+                        {"label": "Thermodynamics", "value": "thermodynamics"},
+                        {"label": "Fuel efficiency", "value": "fuel"},
+                        {"label": "Braking force", "value": "braking"},
+                        {"label": "Driver analysis/classification", "value": "driver"},
+                    ],
+                    value=["basic", "thermodynamics", "fuel", "braking", "driver"],
+                    inline=True,
+                    labelStyle={
+                        "color": colors["text"],
+                        "marginRight": "22px",
+                        "fontSize": "15px",
+                    },
+                    inputStyle={
+                        "marginRight": "6px",
+                        "accentColor": colors["accent"],
+                    },
+                    style={
+                        "color": colors["text"],
+                        "backgroundColor": colors["card"],
+                        "border": f"1px solid {colors['border']}",
+                        "borderRadius": "18px",
+                        "padding": "14px 16px",
+                        "marginBottom": "18px",
+                    },
+                ),
+            ],
+            style={
+                **card_style(),
+                "marginBottom": "18px",
+            },
+        ),
+
 #=======================================================================
 
 # Will's code for playback controls, timeline label, and main dashboard indicators and plots.
@@ -1038,19 +1069,42 @@ app.layout = html.Div(
         ),
 
         html.Div(
-            [
+            id="basic-graphs-section",
+            children=[
                 html.Div([dcc.Graph(id="speed-rpm-plot")], style=card_style()),
+            ],
+            style={
+                "display": "grid",
+                "gridTemplateColumns": "1fr",
+                "gap": "14px",
+                "marginBottom": "18px",
+            },
+        ),
+
+        html.Div(
+            id="thermodynamics-graphs-section",
+            children=[
                 html.Div([dcc.Graph(id="temperature-plot")], style=card_style()),
                 html.Div([dcc.Graph(id="load-plot")], style=card_style()),
-               
+            ],
+            style={
+                "display": "grid",
+                "gridTemplateColumns": "1fr",
+                "gap": "14px",
+                "marginBottom": "18px",
+            },
+        ),
+
+        html.Div(
+            id="fuel-efficiency-graphs-section",
+            children=[
                 #=======================================================================
-                
+
                 # Julian's code to add power, force, and energy plots based on the uploaded CSV data.
 
                 html.Div([dcc.Graph(id="power-plot")], style=card_style()),
                 html.Div([dcc.Graph(id="force-plot")], style=card_style()),
                 html.Div([dcc.Graph(id="energy-plot")], style=card_style()),
-                html.Div([dcc.Graph(id="rolling_efficiency-plot")], style=card_style()),
 
                 #=======================================================================
             ],
@@ -1058,7 +1112,7 @@ app.layout = html.Div(
                 "display": "grid",
                 "gridTemplateColumns": "1fr",
                 "gap": "14px",
-                "marginBottom": "18px", # Added by Ryan. This margin will create space between the plots and the Granite analysis section below. Added by Ryan.
+                "marginBottom": "18px",
             },
         ),
 
@@ -1066,10 +1120,10 @@ app.layout = html.Div(
 
 #=======================================================================
 
-# Direct KIT physical-functions / braking integration section.
 
         html.Div(
-            [
+            id="braking-force-section",
+            children=[
                 html.H2("Braking force analysis", style={"marginTop": "0", "marginBottom": "10px"}),
                 html.Div(
                     id="braking-physics-summary",
@@ -1092,7 +1146,8 @@ app.layout = html.Div(
         ),
 
         html.Div(
-            [
+            id="kit-fuel-section",
+            children=[
                 html.H2("KIT fuel analysis", style={"marginTop": "0", "marginBottom": "10px"}),
                 html.Div(
                     id="kit-physics-summary",
@@ -1117,7 +1172,8 @@ app.layout = html.Div(
 
 # Ryan's code to build the Granite graph analysis section of the dashboard, including the graph selector, question input, and response display.
         html.Div(
-            [
+            id="granite-analysis-section",
+            children=[
                 html.H2("IBM Granite graph analysis", style={"marginTop": "0", "marginBottom": "14px"}),
 
                 html.Div(
@@ -1275,7 +1331,8 @@ app.layout = html.Div(
 # Adrian's code to display the driver classifier results at the end of the dashboard.
 
         html.Div(
-            [
+            id="driver-classifier-section",
+            children=[
                 html.H2("Driver behaviour classifier", style={"marginTop": "0", "marginBottom": "14px"}),
 
                 html.Div(
@@ -1382,26 +1439,66 @@ def update_graph_selector(payloads):
 
 #=======================================================================
 
+# Graph section selector callback. This hides/shows complete graph groups without
+# destroying the graph components or breaking the existing callbacks.
+
+@app.callback(
+    Output("basic-graphs-section", "style"),
+    Output("thermodynamics-graphs-section", "style"),
+    Output("fuel-efficiency-graphs-section", "style"),
+    Output("kit-fuel-section", "style"),
+    Output("braking-force-section", "style"),
+    Output("granite-analysis-section", "style"),
+    Output("driver-classifier-section", "style"),
+    Input("graph-section-selector", "value"),
+)
+def toggle_graph_sections(selected_sections):
+    selected_sections = selected_sections or []
+
+    grid_visible = {
+        "display": "grid",
+        "gridTemplateColumns": "1fr",
+        "gap": "14px",
+        "marginBottom": "18px",
+    }
+
+    card_visible = {**card_style(), "marginBottom": "18px"}
+    card_visible_no_bottom = card_style()
+    hidden = {"display": "none"}
+
+    basic_style = grid_visible if "basic" in selected_sections else hidden
+    thermodynamics_style = grid_visible if "thermodynamics" in selected_sections else hidden
+    fuel_graphs_style = grid_visible if "fuel" in selected_sections else hidden
+    kit_fuel_style = card_visible if "fuel" in selected_sections else hidden
+    braking_style = card_visible if "braking" in selected_sections else hidden
+    granite_style = card_visible if "driver" in selected_sections else hidden
+    driver_style = card_visible_no_bottom if "driver" in selected_sections else hidden
+
+    return (
+        basic_style,
+        thermodynamics_style,
+        fuel_graphs_style,
+        kit_fuel_style,
+        braking_style,
+        granite_style,
+        driver_style,
+    )
+
+#=======================================================================
+
 # Julian's lines corresponding to plotting power.
 
 @app.callback(
     Output("power-plot", "figure"),
     Input("processed-data-store", "data"),
 )
-# def update_power_plot(stored_data):
-#     if stored_data is None:
-#         raise PreventUpdate
-
-#     uploaded_df = pd.DataFrame(stored_data)
-#     return plot_power(uploaded_df)
-
 def update_power_plot(stored_data):
     if stored_data is None:
         raise PreventUpdate
 
     uploaded_df = pd.DataFrame(stored_data)
-    fig = plot_power(uploaded_df)
-    return apply_common_layout(fig, "Power vs Time")
+    return plot_power(uploaded_df)
+
 #========================================================================
 
 # Julian's lines corresponding to plotting longitudinal forces.
@@ -1414,8 +1511,7 @@ def update_force_plot(stored_data):
         raise PreventUpdate
 
     uploaded_df = pd.DataFrame(stored_data)
-    fig = plot_longitudinal_forces(uploaded_df)
-    return apply_common_layout(fig, "Force vs Time")
+    return plot_longitudinal_forces(uploaded_df)
 
 #=========================================================================
 
@@ -1430,26 +1526,7 @@ def update_energy_plot(stored_data):
         raise PreventUpdate
 
     uploaded_df = pd.DataFrame(stored_data)
-    fig = plot_cumulative_energy(uploaded_df)
-    
-    return apply_common_layout(fig, "Cumulative Energy vs Time")
-
-#==========================================================================
-
-@app.callback(
-    Output("rolling_efficiency-plot", "figure"),
-    Input("processed-data-store", "data"),
-)    
-def update_rolling_efficiency_plot(stored_data):
-    if stored_data is None:
-        raise PreventUpdate
-
-    uploaded_df = pd.DataFrame(stored_data)
-    fig = plot_rolling_energy_efficiency(uploaded_df)
-    return apply_common_layout(fig, "Energy Efficiency vs Time")
-
-
-#=======================================================================
+    return plot_cumulative_energy(uploaded_df)
 
 
 
@@ -1733,7 +1810,6 @@ app.clientside_callback(
                             {range: [50, 100], color: "#1f2937"},
                             {range: [100, 140], color: "#312e1f"}
                         ],
-                        threshold: {line: {color: colors.danger, width: 4}, thickness: 0.8, value: 120}
                     }
                 }],
                 layout: {
@@ -1762,7 +1838,6 @@ app.clientside_callback(
                             {range: [3000, 5000], color: "#1f2937"},
                             {range: [5000, 7000], color: "#33211f"}
                         ],
-                        threshold: {line: {color: colors.danger, width: 4}, thickness: 0.8, value: 6000}
                     }
                 }],
                 layout: {
