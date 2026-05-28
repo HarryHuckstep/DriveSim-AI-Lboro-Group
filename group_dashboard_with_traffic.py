@@ -2,6 +2,9 @@
 
 # Will's imports
 
+import os
+import joblib
+
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
@@ -41,13 +44,35 @@ from kit_physical_functions_group_pipeline import add_physical_outputs
 # Julian's code for CSV parsing and vehicle parameter setup.
 
 def parse_uploaded_csv(contents, filename):
-    content_type, content_string = contents.split(",")
+    """Read an uploaded CSV robustly, including comma/semicolon delimiters and UTF-8/Latin-1 text."""
+    content_type, content_string = contents.split(",", 1)
     decoded = base64.b64decode(content_string)
 
     if not filename.lower().endswith(".csv"):
         raise ValueError("Only CSV files are supported.")
 
-    return pd.read_csv(io.StringIO(decoded.decode("utf-8")))
+    attempts = [
+        {"sep": None, "engine": "python", "encoding": "utf-8"},
+        {"sep": ",", "encoding": "utf-8"},
+        {"sep": ";", "encoding": "utf-8"},
+        {"sep": None, "engine": "python", "encoding": "latin1"},
+        {"sep": ",", "encoding": "latin1"},
+        {"sep": ";", "encoding": "latin1"},
+    ]
+
+    last_error = None
+    for kwargs in attempts:
+        try:
+            encoding = kwargs.pop("encoding")
+            text_stream = io.StringIO(decoded.decode(encoding, errors="replace"))
+            df = pd.read_csv(text_stream, **kwargs)
+            if len(df.columns) >= 2:
+                df.columns = df.columns.astype(str).str.strip().str.replace("Â", "", regex=False)
+                return df
+        except Exception as e:
+            last_error = e
+
+    raise ValueError(f"Could not read uploaded CSV properly: {last_error}")
 
 params = VehicleParams(
     mass_kg=1300,
@@ -231,6 +256,7 @@ def build_demo_drive():
 # Uploaded/preprocessed CSV data is stored in processed-data-store and used by callbacks.
 graph_payloads = []
 driver_analysis = None
+traffic_analysis = None
 
 #=======================================================================
 
@@ -855,6 +881,7 @@ def make_kit_fuel_remaining_plot(kit_df):
     return apply_common_layout(fig, "Fuel remaining and distance")
 
 
+
 def make_kit_residual_plot(kit_df):
     fig = go.Figure()
     if "fuel_surface_residual_l_per_100km" in kit_df.columns:
@@ -867,12 +894,286 @@ def make_kit_residual_plot(kit_df):
     return apply_common_layout(fig, "Fuel model residuals")
 
 
+#=======================================================================
+# Traffic prediction, acceleration, and total-distance integration.
+# This reuses the dataframe already produced by prepare_dashboard_df.
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+TRAFFIC_MODEL_PATH = os.path.join(BASE_DIR, "traffic_model.pkl")
+
+
+def load_traffic_model_package():
+    """
+    Loads traffic_model.pkl if it exists.
+
+    Expected format from the training script:
+        {"model": model, "feature_names": list(feature_names)}
+
+    If only the model was saved, this still works, but feature alignment is skipped.
+    """
+    if not os.path.exists(TRAFFIC_MODEL_PATH):
+        return None, None
+
+    package = joblib.load(TRAFFIC_MODEL_PATH)
+
+    if isinstance(package, dict):
+        model = package.get("model")
+        feature_names = package.get("feature_names")
+        return model, feature_names
+
+    return package, None
+
+
+traffic_model, traffic_training_feature_names = load_traffic_model_package()
+
+
+def add_acceleration_and_distance(frame):
+    """
+    Adds acceleration_mps2 and cumulative_distance_m to the processed dashboard dataframe.
+
+    Required columns after processing:
+        time_s
+        speed_kmh
+
+    If speed_kmh is missing but vehicle_speed or speed_ms exists, it is reconstructed.
+    """
+    out = frame.copy()
+    out.columns = [str(c).strip() for c in out.columns]
+
+    if "time_s" not in out.columns:
+        for candidate in ["elapsed_time_s", "timestamp", "time", "t_s", "time_step", "timestep"]:
+            if candidate in out.columns:
+                out["time_s"] = out[candidate]
+                break
+
+    if "speed_kmh" not in out.columns:
+        if "vehicle_speed" in out.columns:
+            out["speed_kmh"] = out["vehicle_speed"]
+        elif "speed_ms" in out.columns:
+            out["speed_kmh"] = pd.to_numeric(out["speed_ms"], errors="coerce") * 3.6
+
+    required = ["time_s", "speed_kmh"]
+    missing = [col for col in required if col not in out.columns]
+    if missing:
+        raise ValueError(f"Cannot calculate acceleration/distance because these columns are missing: {missing}")
+
+    out["time_s"] = pd.to_numeric(out["time_s"], errors="coerce")
+    out["speed_kmh"] = pd.to_numeric(out["speed_kmh"], errors="coerce")
+    out["speed_mps"] = out["speed_kmh"] / 3.6
+
+    out = (
+        out.replace([np.inf, -np.inf], np.nan)
+        .dropna(subset=["time_s", "speed_mps"])
+        .sort_values("time_s")
+        .drop_duplicates(subset="time_s", keep="first")
+        .reset_index(drop=True)
+    )
+
+    if len(out) < 3:
+        raise ValueError("Not enough valid time/speed points to calculate acceleration and distance.")
+
+    t = out["time_s"].to_numpy(dtype=float)
+    v = out["speed_mps"].to_numpy(dtype=float)
+
+    # Acceleration is dv/dt. np.gradient handles non-uniform time spacing better than a simple diff.
+    out["acceleration_mps2"] = np.gradient(v, t)
+
+    # Cumulative distance by trapezoidal integration of speed over time.
+    distance_m = np.zeros(len(out), dtype=float)
+    distance_m[1:] = np.cumsum(0.5 * (v[1:] + v[:-1]) * np.diff(t))
+    out["cumulative_distance_m"] = distance_m
+
+    return out
+
+
+def extract_traffic_features_from_processed_frame(frame):
+    """
+    Builds the one-row feature dataframe expected by the traffic Random Forest model.
+    """
+    df = add_acceleration_and_distance(frame)
+
+    speed = pd.to_numeric(df["speed_mps"], errors="coerce")
+    accel = pd.to_numeric(df["acceleration_mps2"], errors="coerce")
+    delta_t = pd.to_numeric(df["time_s"], errors="coerce").diff()
+    delta_t = delta_t.where(delta_t > 0)
+    jerk = accel.diff() / delta_t
+
+    stop_threshold = 1.0
+    moving_threshold = 2.0
+    harsh_accel_threshold = 1.5
+    harsh_brake_threshold = -1.5
+
+    is_stopped = speed < stop_threshold
+    is_moving = speed > moving_threshold
+
+    total_time = float(df["time_s"].iloc[-1] - df["time_s"].iloc[0])
+    total_distance = float(df["cumulative_distance_m"].iloc[-1])
+
+    time_stopped = float(delta_t.where(is_stopped).fillna(0).sum())
+    time_moving = float(delta_t.where(is_moving).fillna(0).sum())
+
+    features = {
+        "total_time_s": total_time,
+        "total_distance_m": total_distance,
+
+        "mean_speed_m_s": speed.mean(),
+        "std_speed_m_s": speed.std(),
+        "max_speed_m_s": speed.max(),
+        "median_speed_m_s": speed.median(),
+        "p10_speed_m_s": speed.quantile(0.10),
+        "p90_speed_m_s": speed.quantile(0.90),
+        "speed_range": speed.max() - speed.min(),
+
+        "mean_accel": accel.mean(),
+        "std_accel": accel.std(),
+        "max_accel": accel.max(),
+        "min_accel": accel.min(),
+        "mean_abs_accel": accel.abs().mean(),
+        "std_jerk": jerk.std(),
+        "mean_abs_jerk": jerk.abs().mean(),
+
+        "frac_time_stopped": time_stopped / total_time if total_time > 0 else np.nan,
+        "frac_time_moving": time_moving / total_time if total_time > 0 else np.nan,
+        "num_stop_transitions": int((is_stopped.astype(int).diff() == 1).sum()),
+        "num_start_transitions": int((is_stopped.astype(int).diff() == -1).sum()),
+        "num_harsh_accels": int((accel > harsh_accel_threshold).sum()),
+        "num_harsh_brakes": int((accel < harsh_brake_threshold).sum()),
+    }
+
+    if "engine_rpm" in df.columns:
+        rpm = pd.to_numeric(df["engine_rpm"], errors="coerce")
+        features["mean_rpm"] = rpm.mean()
+        features["std_rpm"] = rpm.std()
+        features["max_rpm"] = rpm.max()
+
+    if "throttle_pct" in df.columns:
+        throttle = pd.to_numeric(df["throttle_pct"], errors="coerce")
+        features["mean_throttle"] = throttle.mean()
+        features["std_throttle"] = throttle.std()
+        features["max_throttle"] = throttle.max()
+
+    if "maf_gps" in df.columns:
+        maf = pd.to_numeric(df["maf_gps"], errors="coerce")
+        features["mean_maf"] = maf.mean()
+        features["std_maf"] = maf.std()
+
+    if "map_kpa" in df.columns:
+        map_values = pd.to_numeric(df["map_kpa"], errors="coerce")
+        features["mean_map"] = map_values.mean()
+        features["std_map"] = map_values.std()
+
+    return pd.DataFrame([features])
+
+
+def align_traffic_features(features_df):
+    """Align unseen-file features to the feature order used during model training."""
+    if traffic_training_feature_names is None:
+        return features_df
+
+    return features_df.reindex(columns=traffic_training_feature_names)
+
+
+def make_json_safe(value):
+    if isinstance(value, (np.integer, int)):
+        return int(value)
+    if isinstance(value, (np.floating, float)):
+        if pd.isna(value):
+            return None
+        return float(value)
+    if pd.isna(value):
+        return None
+    return value
+
+
+def predict_traffic_from_processed_frame(frame, filename):
+    """Runs the traffic/non-traffic classifier on the uploaded processed dataframe."""
+    if traffic_model is None:
+        return {
+            "available": False,
+            "message": f"traffic_model.pkl was not found at {TRAFFIC_MODEL_PATH}. Put traffic_model.pkl in the same folder as this dashboard file.",
+        }
+
+    features_df = extract_traffic_features_from_processed_frame(frame)
+    model_input = align_traffic_features(features_df)
+
+    prediction = traffic_model.predict(model_input)[0]
+
+    confidence = None
+    if hasattr(traffic_model, "predict_proba"):
+        probabilities = traffic_model.predict_proba(model_input)[0]
+        confidence = float(np.nanmax(probabilities) * 100)
+
+    if int(prediction) == 1:
+        prediction_text = "TRAFFIC"
+        explanation = "The uploaded journey looks like traffic or congested driving."
+    else:
+        prediction_text = "NON-TRAFFIC"
+        explanation = "The uploaded journey looks like free-flowing or normal driving."
+
+    return {
+        "available": True,
+        "prediction": int(prediction),
+        "prediction_text": prediction_text,
+        "confidence": confidence,
+        "explanation": explanation,
+        "filename": filename,
+        "total_distance_m": make_json_safe(features_df["total_distance_m"].iloc[0]),
+        "mean_accel": make_json_safe(features_df["mean_accel"].iloc[0]),
+        "max_accel": make_json_safe(features_df["max_accel"].iloc[0]),
+        "min_accel": make_json_safe(features_df["min_accel"].iloc[0]),
+    }
+
+
+def make_acceleration_plot(frame):
+    fig = go.Figure()
+
+    if "acceleration_mps2" not in frame.columns:
+        frame = add_acceleration_and_distance(frame)
+
+    fig.add_trace(
+        go.Scatter(
+            x=frame["time_s"],
+            y=frame["acceleration_mps2"],
+            mode="lines",
+            name="Acceleration",
+            line={"width": 2, "color": colors["warning"]},
+        )
+    )
+
+    fig.add_hline(y=0, line_width=1, line_dash="dash", line_color=colors["muted"])
+    fig.update_xaxes(title_text="Time (s)")
+    fig.update_yaxes(title_text="Acceleration (m/s²)")
+    return apply_common_layout(fig, "Acceleration vs Time")
+
+
+def make_distance_travelled_plot(frame):
+    fig = go.Figure()
+
+    if "cumulative_distance_m" not in frame.columns:
+        frame = add_acceleration_and_distance(frame)
+
+    fig.add_trace(
+        go.Scatter(
+            x=frame["time_s"],
+            y=frame["cumulative_distance_m"],
+            mode="lines",
+            name="Total distance travelled",
+            line={"width": 2, "color": colors["accent"]},
+        )
+    )
+
+    fig.update_xaxes(title_text="Time (s)")
+    fig.update_yaxes(title_text="Distance travelled (m)")
+    return apply_common_layout(fig, "Total Distance Travelled vs Time")
+
+
 app.layout = html.Div(
     [
         dcc.Store(id="playback-store", data={"playing": False}),
         dcc.Store(id="processed-data-store"),
         dcc.Store(id="graph-payloads-store", data=graph_payloads),
         dcc.Store(id="driver-analysis-store", data=driver_analysis),
+        dcc.Store(id="traffic-analysis-store", data=traffic_analysis),
         dcc.Store(id="granite-answer-store"),
         dcc.Interval(id="playback-interval", interval=250, n_intervals=0),
         html.Div(id="live-replay-marker-status", style={"display": "none"}),
@@ -914,6 +1215,33 @@ app.layout = html.Div(
         html.Div(
             id="upload-status",
             style={"marginBottom": "14px", "color": colors["muted"]},
+        ),
+
+#=======================================================================
+
+# Traffic prediction, acceleration, and total-distance section.
+
+        html.Div(
+            [
+                html.H2("Traffic prediction and motion outputs", style={"marginTop": "0", "marginBottom": "14px"}),
+
+                html.Div(
+                    id="traffic-prediction-output",
+                    style={
+                        "whiteSpace": "pre-wrap",
+                        "lineHeight": "1.5",
+                        "padding": "14px",
+                        "borderRadius": "12px",
+                        "border": f"1px solid {colors['border']}",
+                        "backgroundColor": "#0d1117",
+                        "marginBottom": "14px",
+                    },
+                ),
+
+                dcc.Graph(id="acceleration-plot"),
+                dcc.Graph(id="distance-travelled-plot"),
+            ],
+            style={**card_style(), "marginBottom": "18px"},
         ),
 
 #=======================================================================
@@ -1326,6 +1654,7 @@ app.layout = html.Div(
     Output("processed-data-store", "data"),
     Output("graph-payloads-store", "data"),
     Output("driver-analysis-store", "data"),
+    Output("traffic-analysis-store", "data"),
     Output("upload-status", "children"),
     Input("upload-data", "contents"),
     State("upload-data", "filename"),
@@ -1339,6 +1668,9 @@ def process_uploaded_file(contents, filename):
         raw_df = parse_uploaded_csv(contents, filename)
         processed_df = prepare_dashboard_df(raw_df, params)
 
+        # Add the two new motion columns once, then every callback can reuse them.
+        processed_df = add_acceleration_and_distance(processed_df)
+
         uploaded_payloads = build_payloads_from_demo_dataframe(
             processed_df,
             file_label=filename,
@@ -1348,18 +1680,100 @@ def process_uploaded_file(contents, filename):
         driver_analysis = analyse_driver_behaviour(classifier_df)
         driver_analysis = make_driver_analysis_json_safe(driver_analysis)
 
-        print(processed_df.columns.tolist()) # Tempoary debug line.
+        traffic_analysis = predict_traffic_from_processed_frame(
+            processed_df,
+            filename=filename,
+        )
 
         return (
             processed_df.to_dict("records"),
             uploaded_payloads,
             driver_analysis,
-            f"Loaded {filename} with {len(processed_df)} rows. Granite graph analysis and driver behaviour analysis have been updated for this file.",
+            traffic_analysis,
+            f"Loaded {filename} with {len(processed_df)} rows. Traffic prediction, acceleration, total distance, Granite graph analysis, and driver behaviour analysis have been updated for this file.",
         )
 
     except Exception as e:
-        return None, graph_payloads, None, f"Upload failed: {e}"
+        return None, graph_payloads, None, None, f"Upload failed: {e}"
     
+#=======================================================================
+
+# Traffic prediction and motion-output callbacks.
+
+@app.callback(
+    Output("traffic-prediction-output", "children"),
+    Input("traffic-analysis-store", "data"),
+)
+def update_traffic_prediction_output(traffic_analysis):
+    if not traffic_analysis:
+        return "Upload a CSV file to run the traffic prediction."
+
+    if not traffic_analysis.get("available", False):
+        return traffic_analysis.get("message", "Traffic model is not available.")
+
+    prediction_text = traffic_analysis.get("prediction_text", "UNKNOWN")
+    confidence = traffic_analysis.get("confidence")
+
+    if prediction_text == "TRAFFIC":
+        border_colour = colors["danger"]
+    else:
+        border_colour = colors["success"]
+
+    confidence_text = f"{confidence:.1f}%" if confidence is not None else "Not available"
+    total_distance_m = traffic_analysis.get("total_distance_m") or 0.0
+    total_distance_km = total_distance_m / 1000.0
+
+    return html.Div(
+        [
+            html.H3(
+                f"Prediction: {prediction_text}",
+                style={"marginTop": "0", "color": border_colour},
+            ),
+            html.P(traffic_analysis.get("explanation", "")),
+            html.P(f"Model confidence: {confidence_text}"),
+            html.P(f"Total distance travelled: {total_distance_km:.3f} km"),
+            html.P(f"Mean acceleration: {(traffic_analysis.get('mean_accel') or 0.0):.3f} m/s²"),
+            html.P(f"Maximum acceleration: {(traffic_analysis.get('max_accel') or 0.0):.3f} m/s²"),
+            html.P(f"Maximum braking acceleration: {(traffic_analysis.get('min_accel') or 0.0):.3f} m/s²"),
+        ],
+        style={
+            "borderLeft": f"5px solid {border_colour}",
+            "paddingLeft": "12px",
+        },
+    )
+
+
+@app.callback(
+    Output("acceleration-plot", "figure"),
+    Output("distance-travelled-plot", "figure"),
+    Input("processed-data-store", "data"),
+)
+def update_motion_output_plots(stored_data):
+    if stored_data is None:
+        message = "Upload a CSV file to show acceleration and total distance travelled."
+        return (
+            make_empty_physics_fig("Acceleration vs Time", message),
+            make_empty_physics_fig("Total Distance Travelled vs Time", message),
+        )
+
+    try:
+        uploaded_df = pd.DataFrame(stored_data)
+
+        if "acceleration_mps2" not in uploaded_df.columns or "cumulative_distance_m" not in uploaded_df.columns:
+            uploaded_df = add_acceleration_and_distance(uploaded_df)
+
+        return (
+            make_acceleration_plot(uploaded_df),
+            make_distance_travelled_plot(uploaded_df),
+        )
+
+    except Exception as e:
+        message = f"Motion output calculation failed: {e}"
+        return (
+            make_empty_physics_fig("Acceleration vs Time", message),
+            make_empty_physics_fig("Total Distance Travelled vs Time", message),
+        )
+
 #=======================================================================
 
 # Will's code to update the graph selector options and default value based on the graph payloads generated from the uploaded CSV data. This ensures that the Granite analysis section always has the correct graphs available for selection based on the most recently uploaded data.
@@ -1492,8 +1906,8 @@ def update_braking_physics_outputs(stored_data):
         return (
             make_braking_force_plot(braking_df),
             make_brake_torque_plot(braking_df),
-            make_braking_power_plot(braking_df),
             make_braking_energy_plot(braking_df),
+            make_braking_power_plot(braking_df),
             summary_text,
         )
     except Exception as e:
