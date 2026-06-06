@@ -28,13 +28,6 @@ from src.physics.longitudinal import VehicleParams
 from src.physics.power_energy import plot_power, plot_cumulative_energy
 from src.physics.longitudinal import plot_longitudinal_forces
 
-try:
-    from src.features.efficiency import plot_rolling_energy_efficiency
-    ROLLING_EFFICIENCY_AVAILABLE = True
-except Exception as import_error:
-    plot_rolling_energy_efficiency = None
-    ROLLING_EFFICIENCY_AVAILABLE = False
-    print(f"Rolling efficiency plot not available: {import_error}")
 
 #======================================================================
 
@@ -420,7 +413,11 @@ traffic_analysis = None
 
 playback_steps = {"1x": 1, "2x": 2, "4x": 4}
 
-app = Dash(__name__)
+app = Dash(
+    __name__,
+    assets_folder=os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets"),
+    assets_url_path="assets",
+)
 app.title = "DriveSim AI Dashboard Prototype"
 
 colors = {
@@ -435,6 +432,145 @@ colors = {
     "danger": "#f85149",
 }
 
+SLIDER_READABILITY_CSS = r"""
+/* =============================================================
+   DriveSim AI slider readability fix
+   This is also injected directly into the Dash page from Python,
+   so the styling works even if the assets folder is not loaded.
+   ============================================================= */
+
+.time-slider-card {
+    padding: 24px 28px 34px 28px !important;
+}
+
+#time-slider,
+.light-time-slider {
+    padding: 8px 18px 22px 18px !important;
+}
+
+#time-slider .rc-slider-rail,
+.light-time-slider .rc-slider-rail,
+.rc-slider-rail {
+    background-color: #e5edf7 !important;
+    height: 9px !important;
+    opacity: 1 !important;
+}
+
+#time-slider .rc-slider-track,
+.light-time-slider .rc-slider-track,
+.rc-slider-track {
+    background-color: #d8b4fe !important;
+    height: 9px !important;
+    opacity: 1 !important;
+}
+
+#time-slider .rc-slider-step,
+.light-time-slider .rc-slider-step,
+.rc-slider-step {
+    height: 9px !important;
+}
+
+#time-slider .rc-slider-handle,
+.light-time-slider .rc-slider-handle,
+.rc-slider-handle {
+    background-color: #ffffff !important;
+    border: 3px solid #d8b4fe !important;
+    width: 22px !important;
+    height: 22px !important;
+    margin-top: -7px !important;
+    opacity: 1 !important;
+    box-shadow: 0 0 0 5px rgba(216, 180, 254, 0.35) !important;
+}
+
+#time-slider .rc-slider-handle:hover,
+#time-slider .rc-slider-handle:focus,
+#time-slider .rc-slider-handle:active,
+.light-time-slider .rc-slider-handle:hover,
+.light-time-slider .rc-slider-handle:focus,
+.light-time-slider .rc-slider-handle:active,
+.rc-slider-handle:hover,
+.rc-slider-handle:focus,
+.rc-slider-handle:active {
+    border-color: #f5e8ff !important;
+    box-shadow: 0 0 0 7px rgba(216, 180, 254, 0.48) !important;
+}
+
+#time-slider .rc-slider-dot,
+.light-time-slider .rc-slider-dot,
+.rc-slider-dot {
+    background-color: #ffffff !important;
+    border-color: #f8fafc !important;
+    width: 10px !important;
+    height: 10px !important;
+    bottom: -1px !important;
+    opacity: 1 !important;
+}
+
+#time-slider .rc-slider-dot-active,
+.light-time-slider .rc-slider-dot-active,
+.rc-slider-dot-active {
+    border-color: #d8b4fe !important;
+}
+
+#time-slider .rc-slider-mark,
+.light-time-slider .rc-slider-mark,
+.rc-slider-mark {
+    color: #f8fafc !important;
+}
+
+#time-slider .rc-slider-mark-text,
+#time-slider .rc-slider-mark-text-active,
+.light-time-slider .rc-slider-mark-text,
+.light-time-slider .rc-slider-mark-text-active,
+.rc-slider-mark-text,
+.rc-slider-mark-text-active {
+    color: #f8fafc !important;
+    opacity: 1 !important;
+    font-weight: 800 !important;
+    font-size: 14px !important;
+    text-shadow: 0 1px 4px rgba(0, 0, 0, 1) !important;
+}
+
+#time-slider .rc-slider-tooltip-inner,
+.light-time-slider .rc-slider-tooltip-inner,
+.rc-slider-tooltip-inner {
+    background-color: #f8fafc !important;
+    color: #0d1117 !important;
+    border: 1px solid #cbd5e1 !important;
+    font-weight: 700 !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35) !important;
+}
+
+#time-slider .rc-slider-tooltip-arrow,
+.light-time-slider .rc-slider-tooltip-arrow,
+.rc-slider-tooltip-arrow {
+    border-top-color: #f8fafc !important;
+}
+"""
+
+# Inject the slider CSS directly into the HTML page.
+# This avoids relying only on Dash loading an assets folder.
+app.index_string = (
+    "<!DOCTYPE html>"
+    "<html>"
+    "<head>"
+    "{%metas%}"
+    "<title>{%title%}</title>"
+    "{%favicon%}"
+    "{%css%}"
+    "<style>" + SLIDER_READABILITY_CSS + "</style>"
+    "</head>"
+    "<body>"
+    "{%app_entry%}"
+    "<footer>"
+    "{%config%}"
+    "{%scripts%}"
+    "{%renderer%}"
+    "</footer>"
+    "</body>"
+    "</html>"
+)
+
 
 def format_time(seconds):
     minutes = int(seconds // 60)
@@ -442,13 +578,26 @@ def format_time(seconds):
     return f"{minutes:02d}:{remainder:05.2f}"
 
 
+def slider_mark_label(label):
+    """Return a Dash slider mark with readable styling on the dark dashboard."""
+    return {
+        "label": label,
+        "style": {
+            "color": "#f8fafc",
+            "fontWeight": "800",
+            "fontSize": "14px",
+            "textShadow": "0 1px 4px rgba(0, 0, 0, 1)",
+        },
+    }
+
+
 def slider_marks(frame):
     if frame is None or frame.empty:
-        return {0: "Upload CSV"}
+        return {0: slider_mark_label("Upload CSV")}
 
     max_index = len(frame) - 1
     markers = sorted(set([0, int(max_index * 0.25), int(max_index * 0.5), int(max_index * 0.75), max_index]))
-    return {i: format_time(frame.loc[i, "time_s"]) for i in markers}
+    return {i: slider_mark_label(format_time(frame.loc[i, "time_s"])) for i in markers}
 
 
 def safe_float(value, default=0.0):
@@ -1310,7 +1459,7 @@ def make_kit_fuel_consumption_plot(kit_df):
         fig.add_trace(go.Scatter(x=kit_df["elapsed_time_s"], y=kit_df["fuel_svr_prediction_l_per_100km"], mode="lines", name="SVR prediction", line={"width": 2, "color": colors["success"]}))
     fig.update_xaxes(title_text="Time (s)")
     fig.update_yaxes(title_text="Fuel consumption (L/100 km)")
-    return apply_common_layout(fig, "KIT fuel consumption")
+    return apply_common_layout(fig, "Fuel consumption")
 
 
 def make_kit_fuel_remaining_plot(kit_df):
@@ -1734,111 +1883,92 @@ app.layout = html.Div(
             style={"marginBottom": "14px", "color": colors["muted"]},
         ),
 
-        html.Div(
+        html.Details(
             [
-                html.Div(
+                html.Summary(
                     "Show graph sections",
-                    style={"fontSize": "13px", "color": colors["muted"], "marginBottom": "12px"},
+                    style={
+                        "fontSize": "15px",
+                        "fontWeight": "700",
+                        "color": colors["text"],
+                        "cursor": "pointer",
+                        "userSelect": "none",
+                        "listStyle": "revert",
+                    },
                 ),
-                graph_selector_group(
-                    "Basic graphs",
-                    "basic-graph-selector",
+                html.Div(
                     [
-                        {"label": "Distance vs time", "value": "distance"},
-                        {"label": "Acceleration vs time", "value": "acceleration"},
-                        {"label": "Speed vs time", "value": "speed"},
-                        {"label": "Drive trace", "value": "drive_trace"},
+                        graph_selector_group(
+                            "Basic graphs",
+                            "basic-graph-selector",
+                            [
+                                {"label": "Distance vs time", "value": "distance"},
+                                {"label": "Acceleration vs time", "value": "acceleration"},
+                                {"label": "Speed vs time", "value": "speed"},
+                                {"label": "Drive trace", "value": "drive_trace"},
+                            ],
+                            ["distance", "acceleration", "speed", "drive_trace"],
+                        ),
+                        graph_selector_group(
+                            "Thermodynamics",
+                            "thermodynamics-graph-selector",
+                            [
+                                {"label": "Temperatures", "value": "temperatures"},
+                                {"label": "Driver demand and cooling", "value": "demand_cooling"},
+                                {"label": "Gear ratio and estimated gear", "value": "gear_ratio"},
+                                {"label": "Fan speed and coolant temperature", "value": "fan_coolant"},
+                            ],
+                            ["temperatures", "demand_cooling", "gear_ratio", "fan_coolant"],
+                        ),
+                        graph_selector_group(
+                            "Fuel efficiency",
+                            "fuel-graph-selector",
+                            [
+                                {"label": "Power", "value": "power"},
+                                {"label": "Longitudinal forces", "value": "forces"},
+                                {"label": "Cumulative energy", "value": "energy"},
+                                {"label": "Fuel consumption", "value": "kit_consumption"},
+                                {"label": "Fuel remaining and distance", "value": "kit_remaining"},
+                                {"label": "Fuel model residuals", "value": "kit_residual"},
+                            ],
+                            ["power", "forces", "energy", "kit_consumption", "kit_remaining", "kit_residual"],
+                        ),
+                        graph_selector_group(
+                            "Braking force",
+                            "braking-graph-selector",
+                            [
+                                {"label": "Summary", "value": "braking_summary"},
+                                {"label": "Braking force", "value": "braking_force"},
+                                {"label": "Brake torque split", "value": "brake_torque"},
+                                {"label": "Braking energy", "value": "braking_energy"},
+                                {"label": "Braking power", "value": "braking_power"},
+                            ],
+                            ["braking_summary", "braking_force", "brake_torque", "braking_energy", "braking_power"],
+                        ),
+                        graph_selector_group(
+                            "Driver analysis/classification",
+                            "driver-analysis-selector",
+                            [
+                                {"label": "IBM Granite graph analysis", "value": "granite"},
+                                {"label": "Traffic prediction summary", "value": "traffic_summary"},
+                                {"label": "Driver behaviour classifier", "value": "driver_classifier"},
+                            ],
+                            ["granite", "traffic_summary", "driver_classifier"],
+                        ),
                     ],
-                    ["distance", "acceleration", "speed", "drive_trace"],
-                ),
-                graph_selector_group(
-                    "Thermodynamics",
-                    "thermodynamics-graph-selector",
-                    [
-                        {"label": "Temperatures", "value": "temperatures"},
-                        {"label": "Driver demand and cooling", "value": "demand_cooling"},
-                        {"label": "Gear ratio and estimated gear", "value": "gear_ratio"},
-                        {"label": "Fan speed and coolant temperature", "value": "fan_coolant"},
-                    ],
-                    ["temperatures", "demand_cooling", "gear_ratio", "fan_coolant"],
-                ),
-                graph_selector_group(
-                    "Fuel efficiency",
-                    "fuel-graph-selector",
-                    [
-                        {"label": "Power", "value": "power"},
-                        {"label": "Longitudinal forces", "value": "forces"},
-                        {"label": "Cumulative energy", "value": "energy"},
-                        {"label": "Rolling energy efficiency", "value": "rolling_efficiency"},
-                        {"label": "KIT fuel consumption", "value": "kit_consumption"},
-                        {"label": "Fuel remaining and distance", "value": "kit_remaining"},
-                        {"label": "Fuel model residuals", "value": "kit_residual"},
-                    ],
-                    ["power", "forces", "energy", "rolling_efficiency", "kit_consumption", "kit_remaining", "kit_residual"],
-                ),
-                graph_selector_group(
-                    "Braking force",
-                    "braking-graph-selector",
-                    [
-                        {"label": "Summary", "value": "braking_summary"},
-                        {"label": "Braking force", "value": "braking_force"},
-                        {"label": "Brake torque split", "value": "brake_torque"},
-                        {"label": "Braking energy", "value": "braking_energy"},
-                        {"label": "Braking power", "value": "braking_power"},
-                    ],
-                    ["braking_summary", "braking_force", "brake_torque", "braking_energy", "braking_power"],
-                ),
-                graph_selector_group(
-                    "Traffic prediction",
-                    "traffic-motion-selector",
-                    [
-                        {"label": "Traffic prediction summary", "value": "traffic_summary"},
-                    ],
-                    ["traffic_summary"],
-                ),
-                graph_selector_group(
-                    "Driver analysis/classification",
-                    "driver-analysis-selector",
-                    [
-                        {"label": "IBM Granite graph analysis", "value": "granite"},
-                        {"label": "Driver behaviour classifier", "value": "driver_classifier"},
-                    ],
-                    ["granite", "driver_classifier"],
+                    style={
+                        "display": "grid",
+                        "gridTemplateColumns": "1fr",
+                        "gap": "12px",
+                        "marginTop": "14px",
+                    },
                 ),
             ],
+            open=False,
             style={
                 **card_style(),
-                "display": "grid",
-                "gridTemplateColumns": "1fr",
-                "gap": "12px",
                 "marginBottom": "18px",
             },
-        ),
-
-
-
-        html.Div(
-            id="traffic-motion-section",
-            children=[
-                html.H2("Traffic prediction", style={"marginTop": "0", "marginBottom": "14px"}),
-                html.Div(
-                    id="traffic-summary-card",
-                    children=[html.Div(
-                        id="traffic-prediction-output",
-                        style={
-                            "whiteSpace": "pre-wrap",
-                            "lineHeight": "1.5",
-                            "padding": "14px",
-                            "borderRadius": "12px",
-                            "border": f"1px solid {colors['border']}",
-                            "backgroundColor": "#0d1117",
-                            "marginBottom": "14px",
-                        },
-                    )],
-                    style={"marginBottom": "14px"},
-                ),
-            ],
-            style={**card_style(), "marginBottom": "18px"},
         ),
 
 #=======================================================================
@@ -1918,11 +2048,13 @@ app.layout = html.Div(
                     max=0,
                     step=1,
                     value=0,
-                    marks={0: "Upload CSV"},
+                    marks={0: slider_mark_label("Upload CSV")},
                     updatemode="drag",
                     tooltip={"placement": "bottom", "always_visible": False},
+                    className="light-time-slider",
                 )
             ],
+            className="time-slider-card",
             style={"marginBottom": "18px", **card_style()},
         ),
 
@@ -2034,17 +2166,6 @@ app.layout = html.Div(
                     ],
                     style=card_style(),
                 ),
-                html.Div(
-                    id="rolling-efficiency-card",
-                    children=[
-                        dcc.Graph(
-                            id="rolling_efficiency-plot",
-                            style={"width": "100%", "height": "520px"},
-                            config={"responsive": True},
-                        )
-                    ],
-                    style=card_style(),
-                ),
 
                 #=======================================================================
             ],
@@ -2092,7 +2213,7 @@ app.layout = html.Div(
         html.Div(
             id="kit-fuel-section",
             children=[
-                html.H2("KIT fuel analysis", style={"marginTop": "0", "marginBottom": "10px"}),
+                html.H2("Fuel analysis", style={"marginTop": "0", "marginBottom": "10px"}),
                 html.Div(
                     id="kit-summary-card",
                     children=[html.Div(
@@ -2276,10 +2397,38 @@ app.layout = html.Div(
 
 #=======================================================================
 
-# Adrian's code to display the driver classifier results at the end of the dashboard.
+# Adrian's code to display the traffic prediction and driver classifier results at the end of the dashboard.
 
         html.Div(
-            id="driver-classifier-section",
+            [
+                html.Div(
+                    id="traffic-motion-section",
+                    children=[
+                        html.H2("Traffic prediction", style={"marginTop": "0", "marginBottom": "14px"}),
+                        html.Div(
+                            id="traffic-summary-card",
+                            children=[
+                                html.Div(
+                                    id="traffic-prediction-output",
+                                    style={
+                                        "whiteSpace": "pre-wrap",
+                                        "lineHeight": "1.5",
+                                        "padding": "14px",
+                                        "borderRadius": "12px",
+                                        "border": f"1px solid {colors['border']}",
+                                        "backgroundColor": "#0d1117",
+                                        "marginBottom": "14px",
+                                    },
+                                )
+                            ],
+                            style={"marginBottom": "14px"},
+                        ),
+                    ],
+                    style=card_style(),
+                ),
+
+                html.Div(
+                    id="driver-classifier-section",
             children=[
                 html.H2("Driver behaviour classifier", style={"marginTop": "0", "marginBottom": "14px"}),
 
@@ -2311,6 +2460,14 @@ app.layout = html.Div(
                 ),
             ],
             style=card_style(),
+        ),
+            ],
+            style={
+                "display": "grid",
+                "gridTemplateColumns": "repeat(auto-fit, minmax(360px, 1fr))",
+                "gap": "14px",
+                "marginBottom": "18px",
+            },
         ),
     ],
     style={
@@ -2463,7 +2620,6 @@ def update_graph_selector(payloads):
     Output("power-card", "style"),
     Output("force-card", "style"),
     Output("energy-card", "style"),
-    Output("rolling-efficiency-card", "style"),
     Output("kit-fuel-section", "style"),
     Output("kit-fuel-consumption-card", "style"),
     Output("kit-fuel-remaining-card", "style"),
@@ -2482,15 +2638,13 @@ def update_graph_selector(payloads):
     Input("thermodynamics-graph-selector", "value"),
     Input("fuel-graph-selector", "value"),
     Input("braking-graph-selector", "value"),
-    Input("traffic-motion-selector", "value"),
     Input("driver-analysis-selector", "value"),
 )
-def toggle_graph_sections(basic_selected, thermo_selected, fuel_selected, braking_selected, traffic_selected, driver_selected):
+def toggle_graph_sections(basic_selected, thermo_selected, fuel_selected, braking_selected, driver_selected):
     basic_selected = basic_selected or []
     thermo_selected = thermo_selected or []
     fuel_selected = fuel_selected or []
     braking_selected = braking_selected or []
-    traffic_selected = traffic_selected or []
     driver_selected = driver_selected or []
 
     grid_visible = {
@@ -2514,7 +2668,7 @@ def toggle_graph_sections(basic_selected, thermo_selected, fuel_selected, brakin
     kit_fuel_style = card_visible_bottom if kit_graph_values.intersection(fuel_selected) else hidden
 
     braking_style = card_visible_bottom if braking_selected else hidden
-    traffic_style = card_visible_bottom if traffic_selected else hidden
+    traffic_style = card_visible if "traffic_summary" in driver_selected else hidden
     granite_style = card_visible_bottom if "granite" in driver_selected else hidden
     driver_style = card_visible if "driver_classifier" in driver_selected else hidden
 
@@ -2533,7 +2687,6 @@ def toggle_graph_sections(basic_selected, thermo_selected, fuel_selected, brakin
         card_visible if "power" in fuel_selected else hidden,
         card_visible if "forces" in fuel_selected else hidden,
         card_visible if "energy" in fuel_selected else hidden,
-        card_visible if "rolling_efficiency" in fuel_selected else hidden,
         kit_fuel_style,
         simple_visible if "kit_consumption" in fuel_selected else hidden,
         simple_visible if "kit_remaining" in fuel_selected else hidden,
@@ -2545,7 +2698,7 @@ def toggle_graph_sections(basic_selected, thermo_selected, fuel_selected, brakin
         simple_visible if "braking_energy" in braking_selected else hidden,
         simple_visible if "braking_power" in braking_selected else hidden,
         traffic_style,
-        simple_visible if "traffic_summary" in traffic_selected else hidden,
+        simple_visible if "traffic_summary" in driver_selected else hidden,
         granite_style,
         driver_style,
     )
@@ -2596,29 +2749,6 @@ def update_energy_plot(stored_data):
     uploaded_df = pd.DataFrame(stored_data)
     fig = plot_cumulative_energy(uploaded_df)
     return apply_common_layout(fig, "Cumulative energy vs time")
-
-
-@app.callback(
-    Output("rolling_efficiency-plot", "figure"),
-    Input("processed-data-store", "data"),
-)
-def update_rolling_efficiency_plot(stored_data):
-    if stored_data is None:
-        raise PreventUpdate
-
-    if not ROLLING_EFFICIENCY_AVAILABLE or plot_rolling_energy_efficiency is None:
-        return make_empty_physics_fig(
-            "Energy Efficiency vs Time",
-            "Rolling efficiency plotting is unavailable because src.features.efficiency could not be imported.",
-        )
-
-    try:
-        uploaded_df = pd.DataFrame(stored_data)
-        fig = plot_rolling_energy_efficiency(uploaded_df)
-        return apply_common_layout(fig, "Energy Efficiency vs Time")
-    except Exception as e:
-        return make_empty_physics_fig("Energy Efficiency vs Time", f"Rolling efficiency plot failed: {e}")
-
 
 
 #=======================================================================
@@ -2684,9 +2814,9 @@ def update_braking_physics_outputs(stored_data):
 )
 def update_kit_physics_outputs(stored_data):
     if stored_data is None:
-        message = "Upload a CSV file to run the KIT fuel analysis."
+        message = "Upload a CSV file to run the Fuel analysis."
         return (
-            make_empty_physics_fig("KIT fuel consumption", message),
+            make_empty_physics_fig("Fuel consumption", message),
             make_empty_physics_fig("Fuel remaining and distance", message),
             make_empty_physics_fig("Fuel model residuals", message),
             message,
@@ -2712,9 +2842,9 @@ def update_kit_physics_outputs(stored_data):
             summary_text,
         )
     except Exception as e:
-        message = f"KIT fuel analysis failed: {e}"
+        message = f"Fuel analysis failed: {e}"
         return (
-            make_empty_physics_fig("KIT fuel consumption", message),
+            make_empty_physics_fig("Fuel consumption", message),
             make_empty_physics_fig("Fuel remaining and distance", message),
             make_empty_physics_fig("Fuel model residuals", message),
             message,
@@ -3148,7 +3278,6 @@ def update_driver_classifier_display(driver_analysis):
         f"Average speed: {features.get('avg_speed', 0):.1f} km/h\n"
         f"Maximum speed: {features.get('max_speed', 0):.1f} km/h\n"
         f"Maximum acceleration: {features.get('max_accel', 0):.2f} m/s²\n"
-        f"Maximum braking: {features.get('max_brake', 0):.2f} m/s²\n"
         f"Aggressive acceleration events: {features.get('aggressive_accel_count', 0)}\n"
         f"Average RPM: {features.get('avg_rpm', 0):.0f} rpm\n"
     )

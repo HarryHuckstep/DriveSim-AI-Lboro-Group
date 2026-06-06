@@ -1,0 +1,56 @@
+/* DriveSim AI timeline slider readability fix.
+   Put this file in an assets/ folder next to dashboard_app_final_V3.py.
+   Dash automatically loads CSS files from assets/. */
+
+.light-time-slider .rc-slider-rail {
+    background-color: #d7dee8 !important;
+    height: 6px !important;
+}
+
+.light-time-slider .rc-slider-track {
+    background-color: #d8b4fe !important;
+    height: 6px !important;
+}
+
+.light-time-slider .rc-slider-handle {
+    background-color: #ffffff !important;
+    border: 2px solid #d8b4fe !important;
+    width: 18px !important;
+    height: 18px !important;
+    margin-top: -6px !important;
+    box-shadow: 0 0 0 3px rgba(216, 180, 254, 0.25) !important;
+    opacity: 1 !important;
+}
+
+.light-time-slider .rc-slider-handle:hover,
+.light-time-slider .rc-slider-handle:focus,
+.light-time-slider .rc-slider-handle:active {
+    border-color: #f5e8ff !important;
+    box-shadow: 0 0 0 5px rgba(216, 180, 254, 0.35) !important;
+}
+
+.light-time-slider .rc-slider-dot {
+    background-color: #f8fafc !important;
+    border-color: #cbd5e1 !important;
+}
+
+.light-time-slider .rc-slider-dot-active {
+    border-color: #d8b4fe !important;
+}
+
+.light-time-slider .rc-slider-mark-text {
+    color: #f8fafc !important;
+    font-weight: 600 !important;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7) !important;
+}
+
+.light-time-slider .rc-slider-tooltip-inner {
+    background-color: #f8fafc !important;
+    color: #0d1117 !important;
+    border: 1px solid #cbd5e1 !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3) !important;
+}
+
+.light-time-slider .rc-slider-tooltip-arrow {
+    border-top-color: #f8fafc !important;
+}

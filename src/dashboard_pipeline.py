@@ -1,7 +1,7 @@
 import sys
 from pathlib import Path
 import matplotlib.pyplot as plt
-HERE = Path().resolve()
+HERE = Path(__file__).resolve()
 PROJECT_ROOT = next(p for p in [HERE, *HERE.parents] if (p / "src").exists())
 sys.path.insert(0, str(PROJECT_ROOT)) 
 from src.io.obd_loader import load_obd_csv, require_columns
