@@ -67,10 +67,10 @@ Identify driving characteristics from telemetry patterns.
 
 Potential classifications include:
 
-* Eco driving
-* Normal driving
 * Aggressive driving
-* Mixed driving behaviour
+* Normal driving
+* Efficient
+* Calm Driver
 
 ### Granite AI Analysis
 
@@ -139,7 +139,7 @@ Derived metrics are calculated, including:
 
 ### 4. Dashboard Generation
 
-Interactive visualisations and KPI cards are generated automatically.
+Interactive visualisations are generated automatically.
 
 ### 5. AI Analysis
 
@@ -257,29 +257,9 @@ http://127.0.0.1:8050
 1. Launch the dashboard.
 2. Upload a raw OBD-II CSV file.
 3. Wait for preprocessing to complete.
-4. Explore the available analytics sections.
-5. Review generated visualisations and performance metrics.
-6. Export results if required.
-
----
-
-## Project Structure
-
-```text
-project/
-│
-├── dashboard_app_final.py
-├── requirements.txt
-├── README.md
-│
-├── src/
-│   ├── features/
-│   ├── analytics/
-│   ├── visualisation/
-│   └── utils/
-│
-└── data/
-```
+4. Press play. 
+5. Explore the available analytics sections.
+6. Review generated visualisations and performance metrics.
 
 ---
 
@@ -311,25 +291,3 @@ Analyse:
 * Fuel efficiency trends
 * Vehicle operating conditions
 * Route characteristics
-
----
-
-## Limitations
-
-* Results are dependent on sensor quality and sampling frequency.
-* Missing OBD-II parameters may reduce the number of available analytics.
-* Different vehicle manufacturers may expose different PID sets.
-* Fuel consumption calculations may rely on estimated values when certain sensors are unavailable.
-
----
-
-## Future Improvements
-
-Potential enhancements include:
-
-* Live OBD-II streaming support
-* GPS route mapping
-* Predictive maintenance analytics
-* Advanced machine learning driver profiling
-* Multi-drive comparison tools
-* Automated reporting and export functionality
