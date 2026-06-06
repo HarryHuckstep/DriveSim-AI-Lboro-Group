@@ -5,12 +5,12 @@ import sys
 
 STAGES = {
     "gear": {
-        "script": "gearEstimater.py",
+        "script": "gearRatios.py",
         "input_from": "smoothed",
         "output_suffix": "_gears.csv",
     },
     "fan": {
-        "script": "fanSpeedEstimater.py",
+        "script": "fanSpeedEstimater_fixed.py",
         "input_from": "smoothed",
         "output_suffix": "_fan.csv",
     },
@@ -74,7 +74,7 @@ def run_pipeline(input_file: str, selected_stages: list[str], run_plots: bool) -
 
     outputs = build_pipeline_paths(raw_input)
 
-    run_python_script("dataHandlerV2.py", outputs["raw"])
+    run_python_script("dataHandler.py", outputs["raw"])
     ensure_file_exists(outputs["clean"])
 
     run_python_script("dataSmoother.py", outputs["clean"])
@@ -94,7 +94,7 @@ def run_pipeline(input_file: str, selected_stages: list[str], run_plots: bool) -
         outputs[stage_name] = stage_output
 
     if run_plots:
-        ensure_script_exists("plotResults.py")
+        ensure_script_exists("plotHandler.py")
 
         plot_inputs = [str(outputs["raw"]), str(outputs["smoothed"])]
 
@@ -102,7 +102,7 @@ def run_pipeline(input_file: str, selected_stages: list[str], run_plots: bool) -
             if stage_name in outputs:
                 plot_inputs.append(str(outputs[stage_name]))
 
-        cmd = ["python", "plotResults.py", *plot_inputs]
+        cmd = ["python", "plotHandler.py", *plot_inputs]
         print(f"\nRunning: {' '.join(cmd)}")
         subprocess.run(cmd, check=True)
 
@@ -114,12 +114,12 @@ def run_pipeline(input_file: str, selected_stages: list[str], run_plots: bool) -
 def print_usage() -> None:
     print(
         "\nUsage:\n"
-        "python runPipeline.py <input_file> [stages] [--plot]\n\n"
+        "python pipelineManager.py <input_file> [stages] [--plot]\n\n"
         "Examples:\n"
-        "python runPipeline.py NewDrive.csv\n"
-        "python runPipeline.py NewDrive.xlsx gear\n"
-        "python runPipeline.py NewDrive.csv fan\n"
-        "python runPipeline.py NewDrive.csv gear,fan --plot\n"
+        "python pipelineManager.py NewDrive.csv\n"
+        "python pipelineManager.py NewDrive.xlsx gear\n"
+        "python pipelineManager.py NewDrive.csv fan\n"
+        "python pipelineManager.py NewDrive.csv gear,fan --plot\n"
     )
 
 
