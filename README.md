@@ -147,40 +147,92 @@ Optional AI-driven narrative summaries can be produced using the processed data.
 
 ---
 
-## Installation
+# Installation and Setup
 
-### Clone the Repository
+## Prerequisites
 
-```bash
-git clone <repository-url>
-cd <repository-folder>
-```
+Ensure the following are installed on your system:
 
-### Create a Virtual Environment
+* Python 3.10 or newer
+* pip (Python package manager)
 
-```bash
-python -m venv .venv
-```
-
-Activate:
-
-Windows:
+To verify your installation:
 
 ```bash
-.venv\Scripts\activate
+python --version
+pip --version
 ```
 
-Linux / macOS:
+---
+
+## Extract the Project
+
+1. Download the project ZIP file.
+2. Extract the contents to a location of your choice.
+
+Example:
+
+```text
+Documents/
+└── OBD_Dashboard_Project/
+```
+
+---
+
+## Open a Terminal
+
+Navigate to the extracted project folder:
 
 ```bash
-source .venv/bin/activate
+cd OBD_Dashboard_Project
 ```
+---
 
-### Install Dependencies
+## Install Dependencies
+
+Install all required packages:
 
 ```bash
 pip install -r requirements.txt
 ```
+
+---
+
+## Launch the Dashboard
+
+Run the dashboard application:
+
+```bash
+python dashboard_app_final.py
+```
+
+After startup, a message similar to the following will appear:
+
+```text
+Dash is running on http://127.0.0.1:8050/
+```
+
+Open the displayed URL in your web browser.
+
+---
+
+## Using the Dashboard
+
+1. Launch the dashboard.
+2. Click the file upload area.
+3. Select a raw OBD-II CSV dataset.
+4. Wait for preprocessing to complete.
+5. Explore the generated analytics, charts, and performance metrics.
+
+---
+
+## Input Data
+
+The dashboard expects a CSV file containing OBD-II telemetry data collected during a vehicle journey.
+
+Example data source:
+
+KIT OBD-II Database
 
 ---
 
@@ -189,7 +241,7 @@ pip install -r requirements.txt
 Launch the application:
 
 ```bash
-python dashboard_app_final_V5.py
+python dashboard_app_final.py
 ```
 
 The dashboard will start locally and can be accessed through:
@@ -216,7 +268,7 @@ http://127.0.0.1:8050
 ```text
 project/
 │
-├── dashboard_app_final_V5.py
+├── dashboard_app_final.py
 ├── requirements.txt
 ├── README.md
 │
@@ -281,9 +333,3 @@ Potential enhancements include:
 * Advanced machine learning driver profiling
 * Multi-drive comparison tools
 * Automated reporting and export functionality
-
----
-
-## License
-
-This project is provided for educational, research, and analytical purposes. Ensure compliance with applicable vehicle data privacy and usage regulations when collecting and processing telemetry data.
